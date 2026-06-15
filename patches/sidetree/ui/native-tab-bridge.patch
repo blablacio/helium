@@ -1,0 +1,847 @@
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -4686,6 +4686,10 @@ static_library("ui") {
+       "views/tabs/hovercard/tab_hover_card_thumbnail_observer.h",
+       "views/tabs/new_tab_button.cc",
+       "views/tabs/new_tab_button.h",
++      "views/tabs/sidetree/sidetree_tab_row_view.cc",
++      "views/tabs/sidetree/sidetree_tab_row_view.h",
++      "views/tabs/sidetree/sidetree_tab_strip_view.cc",
++      "views/tabs/sidetree/sidetree_tab_strip_view.h",
+       "views/tabs/tab.cc",
+       "views/tabs/tab.h",
+       "views/tabs/tab/alert_indicator_button.cc",
+--- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
+@@ -42,6 +42,7 @@
+ #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+ #include "chrome/browser/ui/views/helium/frame_corner_radius.h"
+ #include "chrome/browser/ui/views/tabs/shared/drop_arrow.h"
++#include "chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.h"
+ #include "chrome/browser/ui/views/tabs/vertical/root_tab_collection_node.h"
+ #include "chrome/browser/ui/views/tabs/vertical/tab_collection_node.h"
+ #include "chrome/browser/ui/views/tabs/vertical/vertical_pinned_tab_container_view.h"
+@@ -70,17 +71,14 @@
+ #include "ui/views/background.h"
+ #include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/focus_ring.h"
+-#include "ui/views/controls/label.h"
+ #include "ui/views/controls/resize_area.h"
+ #include "ui/views/controls/scroll_view.h"
+ #include "ui/views/controls/separator.h"
+ #include "ui/views/focus/focus_manager.h"
+ #include "ui/views/interaction/element_tracker_views.h"
+-#include "ui/views/layout/box_layout.h"
+ #include "ui/views/layout/flex_layout.h"
+ #include "ui/views/layout/flex_layout_types.h"
+ #include "ui/views/layout/layout_types.h"
+-#include "ui/views/style/typography.h"
+ #include "ui/views/view.h"
+ #include "ui/views/view_class_properties.h"
+ #include "ui/views/view_utils.h"
+@@ -102,34 +100,10 @@ constexpr ShadowFrameView::ShadowAlpha k
+      .dark_key = 0.6,
+      .dark_ambient = 0.0});
+ 
+-std::unique_ptr<views::View> CreateSideTreeNativeShellView() {
+-  auto shell = std::make_unique<views::View>();
+-  auto* const layout =
+-      shell->SetLayoutManager(std::make_unique<views::BoxLayout>(
+-          views::BoxLayout::Orientation::kVertical,
+-          gfx::Insets::TLBR(12, 10, 8, 10), 6));
+-  layout->set_cross_axis_alignment(
+-      views::BoxLayout::CrossAxisAlignment::kStretch);
+-  shell->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
+-  shell->GetViewAccessibility().SetRole(ax::mojom::Role::kGroup);
+-  shell->GetViewAccessibility().SetName(u"SideTree");
+-
+-  auto title = std::make_unique<views::Label>(u"SideTree");
+-  title->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+-  title->SetTextStyle(views::style::STYLE_BODY_3_MEDIUM);
+-  shell->AddChildView(std::move(title));
+-
+-  auto stage = std::make_unique<views::Label>(u"C1 native shell");
+-  stage->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+-  stage->SetTextStyle(views::style::STYLE_BODY_4);
+-  shell->AddChildView(std::move(stage));
+-
+-  auto backing = std::make_unique<views::Label>(u"Tab model stays live");
+-  backing->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+-  backing->SetTextStyle(views::style::STYLE_BODY_4);
+-  shell->AddChildView(std::move(backing));
+-
+-  return shell;
++std::unique_ptr<SideTreeTabStripView> CreateSideTreeNativeShellView(
++    BrowserView* browser_view,
++    TabStripModel* tab_strip_model) {
++  return std::make_unique<SideTreeTabStripView>(browser_view, tab_strip_model);
+ }
+ }  // namespace
+ 
+@@ -244,11 +218,13 @@ VerticalTabStripRegionView::VerticalTabS
+                                    views::MinimumFlexSizeRule::kPreferred,
+                                    views::MaximumFlexSizeRule::kPreferred));
+ 
+-  sidetree_shell_view_ = AddChildView(CreateSideTreeNativeShellView());
++  sidetree_shell_view_ = AddChildView(
++      CreateSideTreeNativeShellView(browser_view, tab_strip_model_));
+   sidetree_shell_view_->SetProperty(
+       views::kFlexBehaviorKey,
+-      views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToMinimum,
+-                               views::MaximumFlexSizeRule::kPreferred));
++      views::FlexSpecification(views::LayoutOrientation::kVertical,
++                               views::MinimumFlexSizeRule::kScaleToMinimum,
++                               views::MaximumFlexSizeRule::kUnbounded));
+   sidetree_shell_view_->SetProperty(
+       views::kMarginsKey, gfx::Insets::TLBR(0, 0, kBottomContainerGap, 0));
+ 
+@@ -561,6 +537,10 @@ void VerticalTabStripRegionView::Layout(
+ 
+ views::View* VerticalTabStripRegionView::GetDefaultFocusableChild() {
+   if (sidetree_shell_view_) {
++    if (views::View* sidetree_focus =
++            sidetree_shell_view_->GetDefaultFocusableChild()) {
++      return sidetree_focus;
++    }
+     return sidetree_shell_view_;
+   }
+ 
+@@ -777,6 +757,13 @@ void VerticalTabStripRegionView::UpdateL
+ }
+ 
+ std::optional<int> VerticalTabStripRegionView::GetFocusedTabIndex() const {
++  if (sidetree_shell_view_) {
++    if (std::optional<int> sidetree_focused_index =
++            sidetree_shell_view_->GetFocusedTabIndex()) {
++      return sidetree_focused_index;
++    }
++  }
++
+   const views::FocusManager* focus_manager = GetFocusManager();
+   if (!focus_manager) {
+     return std::nullopt;
+@@ -811,6 +798,13 @@ const tabs::TabData& VerticalTabStripReg
+ }
+ 
+ views::View* VerticalTabStripRegionView::GetTabAnchorViewAt(int tab_index) {
++  if (sidetree_shell_view_) {
++    if (views::View* sidetree_anchor =
++            sidetree_shell_view_->GetTabAnchorViewAt(tab_index)) {
++      return sidetree_anchor;
++    }
++  }
++
+   tabs::TabInterface* tab = tab_strip_model_->GetTabAtIndex(tab_index);
+   CHECK(tab) << "No tab found for tab_index: " << tab_index;
+ 
+@@ -939,6 +933,9 @@ void VerticalTabStripRegionView::SetTabS
+ }
+ 
+ views::View* VerticalTabStripRegionView::GetTabStripView() {
++  if (sidetree_shell_view_) {
++    return sidetree_shell_view_;
++  }
+   return tab_strip_view_;
+ }
+ 
+@@ -1107,6 +1104,8 @@ views::View* VerticalTabStripRegionView:
+ 
+   tab_strip_view_ =
+       static_cast<VerticalTabStripView*>(AddChildView(std::move(view)));
++  // C2 keeps Chromium's native vertical tab view alive for controller/drag
++  // plumbing, while public visible tab-strip queries point at SideTree.
+   tab_strip_view_->SetVisible(false);
+   tab_strip_view_->SetProperty(views::kViewIgnoredByLayoutKey, true);
+   tab_strip_view_->SetProperty(
+@@ -1218,7 +1217,9 @@ gfx::Rect VerticalTabStripRegionView::Ge
+   // Tabs should be draggable from the top of the tab strip to the bottom of the
+   // tab strip's max size, saving space for the bottom button container and
+   // padding.
+-  gfx::Rect tab_strip_draggable_bounds = tab_strip_view_->GetBoundsInScreen();
++  gfx::Rect tab_strip_draggable_bounds =
++      sidetree_shell_view_ ? sidetree_shell_view_->GetBoundsInScreen()
++                           : tab_strip_view_->GetBoundsInScreen();
+   tab_strip_draggable_bounds.set_height(
+       GetBoundsInScreen().bottom() -
+       bottom_button_container_->GetMinimumSize().height() -
+--- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
++++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
+@@ -34,6 +34,7 @@
+ class BrowserView;
+ class HoverTabSelector;
+ class RootTabCollectionNode;
++class SideTreeTabStripView;
+ class TabDragContext;
+ class VerticalUnpinnedTabContainerView;
+ class VerticalPinnedTabContainerView;
+@@ -303,7 +304,7 @@ class VerticalTabStripRegionView final
+   bool zen_mode_floating_style_ = false;
+ 
+   raw_ptr<VerticalTabStripView> tab_strip_view_ = nullptr;
+-  raw_ptr<views::View> sidetree_shell_view_ = nullptr;
++  raw_ptr<SideTreeTabStripView> sidetree_shell_view_ = nullptr;
+   raw_ptr<VerticalTabStripBottomContainer> bottom_button_container_ = nullptr;
+   raw_ptr<views::View> gemini_button_ = nullptr;
+   raw_ptr<views::ResizeArea> resize_area_ = nullptr;
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.cc
+@@ -0,0 +1,194 @@
++#include "chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.h"
++
++#include <memory>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/strings/strcat.h"
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/accessibility/ax_enums.mojom.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/events/event.h"
++#include "ui/events/keycodes/keyboard_codes.h"
++#include "ui/gfx/color_palette.h"
++#include "ui/gfx/geometry/insets.h"
++#include "ui/gfx/geometry/size.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/background.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/layout/flex_layout.h"
++#include "ui/views/layout/flex_layout_types.h"
++#include "ui/views/style/typography.h"
++#include "ui/views/view_class_properties.h"
++
++namespace {
++
++constexpr int kRowHeight = 36;
++constexpr int kMarkerWidth = 28;
++constexpr int kCloseWidth = 28;
++constexpr int kCornerRadius = 4;
++
++std::u16string NonEmptyTitle(const SideTreeTabRowView::State& state) {
++  if (!state.title.empty()) {
++    return state.title;
++  }
++  if (!state.url_text.empty()) {
++    return state.url_text;
++  }
++  return u"New Tab";
++}
++
++}  // namespace
++
++SideTreeTabRowView::SideTreeTabRowView(Delegate* delegate, State state)
++    : delegate_(delegate), state_(std::move(state)) {
++  SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++  SetPreferredSize(gfx::Size(0, kRowHeight));
++  GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
++
++  auto* layout = SetLayoutManager(std::make_unique<views::FlexLayout>());
++  layout->SetOrientation(views::LayoutOrientation::kHorizontal)
++      .SetMainAxisAlignment(views::LayoutAlignment::kStart)
++      .SetCrossAxisAlignment(views::LayoutAlignment::kCenter)
++      .SetInteriorMargin(gfx::Insets::TLBR(0, 8, 0, 4))
++      .SetDefault(views::kMarginsKey, gfx::Insets::TLBR(0, 0, 0, 6));
++
++  marker_label_ = AddChildView(std::make_unique<views::Label>());
++  marker_label_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++  marker_label_->SetPreferredSize(gfx::Size(kMarkerWidth, kRowHeight));
++
++  title_label_ = AddChildView(std::make_unique<views::Label>());
++  title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  title_label_->SetElideBehavior(gfx::ELIDE_TAIL);
++  title_label_->SetTextStyle(views::style::STYLE_BODY_3);
++  title_label_->SetProperty(
++      views::kFlexBehaviorKey,
++      views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToMinimum,
++                               views::MaximumFlexSizeRule::kUnbounded));
++
++  status_label_ = AddChildView(std::make_unique<views::Label>());
++  status_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
++  status_label_->SetTextStyle(views::style::STYLE_BODY_5);
++
++  close_button_ = AddChildView(std::make_unique<views::LabelButton>(
++      base::BindRepeating(&SideTreeTabRowView::Close, base::Unretained(this)),
++      u"x"));
++  close_button_->SetTooltipText(u"Close tab");
++  close_button_->SetPreferredSize(gfx::Size(kCloseWidth, kRowHeight));
++
++  Refresh();
++}
++
++SideTreeTabRowView::~SideTreeTabRowView() = default;
++
++void SideTreeTabRowView::UpdateState(State state) {
++  state_ = std::move(state);
++  Refresh();
++}
++
++bool SideTreeTabRowView::OnMousePressed(const ui::MouseEvent& event) {
++  if (event.IsOnlyLeftMouseButton()) {
++    Activate();
++    return true;
++  }
++  return views::View::OnMousePressed(event);
++}
++
++bool SideTreeTabRowView::OnKeyPressed(const ui::KeyEvent& event) {
++  if (event.key_code() == ui::VKEY_RETURN ||
++      event.key_code() == ui::VKEY_SPACE) {
++    Activate();
++    return true;
++  }
++  return views::View::OnKeyPressed(event);
++}
++
++void SideTreeTabRowView::OnGestureEvent(ui::GestureEvent* event) {
++  if (event->type() == ui::EventType::kGestureTap) {
++    Activate();
++    event->SetHandled();
++    return;
++  }
++  views::View::OnGestureEvent(event);
++}
++
++void SideTreeTabRowView::OnThemeChanged() {
++  views::View::OnThemeChanged();
++  Refresh();
++}
++
++void SideTreeTabRowView::Activate() {
++  if (delegate_) {
++    delegate_->ActivateSideTreeTabAt(state_.index);
++  }
++}
++
++void SideTreeTabRowView::Close() {
++  if (delegate_) {
++    delegate_->CloseSideTreeTabAt(state_.index);
++  }
++}
++
++void SideTreeTabRowView::Refresh() {
++  marker_label_->SetText(MarkerText());
++  title_label_->SetText(NonEmptyTitle(state_));
++  status_label_->SetText(StatusText());
++
++  GetViewAccessibility().SetName(AccessibleName());
++  close_button_->GetViewAccessibility().SetName(
++      base::StrCat({u"Close ", NonEmptyTitle(state_)}));
++
++  const SkColor background_color =
++      state_.active ? gfx::kGoogleBlue050 : SK_ColorTRANSPARENT;
++  SetBackground(
++      views::CreateRoundedRectBackground(background_color, kCornerRadius));
++  SchedulePaint();
++}
++
++std::u16string SideTreeTabRowView::MarkerText() const {
++  if (state_.active) {
++    return u"*";
++  }
++  if (state_.pinned) {
++    return u"pin";
++  }
++  return std::u16string();
++}
++
++std::u16string SideTreeTabRowView::StatusText() const {
++  if (state_.crashed) {
++    return u"crashed";
++  }
++  if (state_.discarded) {
++    return u"discarded";
++  }
++  if (state_.loading) {
++    return u"loading";
++  }
++  if (state_.muted) {
++    return u"muted";
++  }
++  if (state_.audible) {
++    return u"audio";
++  }
++  return std::u16string();
++}
++
++std::u16string SideTreeTabRowView::AccessibleName() const {
++  std::u16string name = NonEmptyTitle(state_);
++  if (state_.active) {
++    name = base::StrCat({name, u", active tab"});
++  }
++  if (state_.pinned) {
++    name = base::StrCat({name, u", pinned"});
++  }
++  const std::u16string status = StatusText();
++  if (!status.empty()) {
++    name = base::StrCat({name, u", ", status});
++  }
++  return name;
++}
++
++BEGIN_METADATA(SideTreeTabRowView)
++END_METADATA
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.h
+@@ -0,0 +1,73 @@
++#ifndef CHROME_BROWSER_UI_VIEWS_TABS_SIDETREE_SIDETREE_TAB_ROW_VIEW_H_
++#define CHROME_BROWSER_UI_VIEWS_TABS_SIDETREE_SIDETREE_TAB_ROW_VIEW_H_
++
++#include <string>
++
++#include "base/memory/raw_ptr.h"
++#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/events/event.h"
++#include "ui/views/view.h"
++
++namespace views {
++class Label;
++class LabelButton;
++}  // namespace views
++
++class SideTreeTabRowView : public views::View {
++  METADATA_HEADER(SideTreeTabRowView, views::View)
++
++ public:
++  class Delegate {
++   public:
++    virtual void ActivateSideTreeTabAt(int index) = 0;
++    virtual void CloseSideTreeTabAt(int index) = 0;
++
++   protected:
++    virtual ~Delegate() = default;
++  };
++
++  struct State {
++    int index = -1;
++    std::u16string title;
++    std::u16string url_text;
++    bool active = false;
++    bool pinned = false;
++    bool loading = false;
++    bool audible = false;
++    bool muted = false;
++    bool discarded = false;
++    bool crashed = false;
++  };
++
++  SideTreeTabRowView(Delegate* delegate, State state);
++  SideTreeTabRowView(const SideTreeTabRowView&) = delete;
++  SideTreeTabRowView& operator=(const SideTreeTabRowView&) = delete;
++  ~SideTreeTabRowView() override;
++
++  void UpdateState(State state);
++  int index() const { return state_.index; }
++
++  views::Label* title_label_for_testing() { return title_label_; }
++
++  bool OnMousePressed(const ui::MouseEvent& event) override;
++  bool OnKeyPressed(const ui::KeyEvent& event) override;
++  void OnGestureEvent(ui::GestureEvent* event) override;
++  void OnThemeChanged() override;
++
++ private:
++  void Activate();
++  void Close();
++  void Refresh();
++  std::u16string MarkerText() const;
++  std::u16string StatusText() const;
++  std::u16string AccessibleName() const;
++
++  raw_ptr<Delegate> delegate_ = nullptr;
++  State state_;
++  raw_ptr<views::Label> marker_label_ = nullptr;
++  raw_ptr<views::Label> title_label_ = nullptr;
++  raw_ptr<views::Label> status_label_ = nullptr;
++  raw_ptr<views::LabelButton> close_button_ = nullptr;
++};
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TABS_SIDETREE_SIDETREE_TAB_ROW_VIEW_H_
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
+@@ -0,0 +1,304 @@
++#include "chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.h"
++
++#include <memory>
++#include <string>
++#include <utility>
++
++#include "base/check.h"
++#include "base/check_op.h"
++#include "base/functional/bind.h"
++#include "base/strings/strcat.h"
++#include "base/strings/utf_string_conversions.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/tabs/tab_enums.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/tabs/tab_strip_user_gesture_details.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "content/public/browser/web_contents.h"
++#include "ui/accessibility/ax_enums.mojom.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/gfx/geometry/insets.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/controls/scroll_view.h"
++#include "ui/views/focus/focus_manager.h"
++#include "ui/views/layout/box_layout.h"
++#include "ui/views/layout/flex_layout.h"
++#include "ui/views/layout/flex_layout_types.h"
++#include "ui/views/style/typography.h"
++#include "ui/views/view_class_properties.h"
++#include "url/gurl.h"
++
++namespace {
++
++constexpr int kApproximateRowHeight = 38;
++constexpr int kHeaderHeight = 28;
++constexpr int kMaxPreferredRows = 12;
++constexpr int kNewTabButtonHeight = 32;
++
++std::u16string FormatUrlText(content::WebContents* contents) {
++  if (!contents) {
++    return std::u16string();
++  }
++  GURL url = contents->GetVisibleURL();
++  if (url.is_empty()) {
++    url = contents->GetLastCommittedURL();
++  }
++  return base::UTF8ToUTF16(url.spec());
++}
++
++}  // namespace
++
++SideTreeTabStripView::SideTreeTabStripView(BrowserView* browser_view,
++                                           TabStripModel* tab_strip_model)
++    : browser_view_(browser_view), tab_strip_model_(tab_strip_model) {
++  CHECK(browser_view_);
++  CHECK(tab_strip_model_);
++  DCHECK_EQ(tab_strip_model_, browser_view_->browser()->tab_strip_model());
++
++  SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++  GetViewAccessibility().SetRole(ax::mojom::Role::kGroup);
++  GetViewAccessibility().SetName(u"SideTree");
++
++  auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
++      views::BoxLayout::Orientation::kVertical, gfx::Insets::TLBR(8, 8, 8, 8),
++      6));
++  layout->set_cross_axis_alignment(
++      views::BoxLayout::CrossAxisAlignment::kStretch);
++
++  auto header = std::make_unique<views::View>();
++  header->SetPreferredSize(gfx::Size(0, kHeaderHeight));
++  auto* header_layout =
++      header->SetLayoutManager(std::make_unique<views::FlexLayout>());
++  header_layout->SetOrientation(views::LayoutOrientation::kHorizontal)
++      .SetMainAxisAlignment(views::LayoutAlignment::kStart)
++      .SetCrossAxisAlignment(views::LayoutAlignment::kCenter);
++
++  title_label_ =
++      header->AddChildView(std::make_unique<views::Label>(u"SideTree"));
++  title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  title_label_->SetTextStyle(views::style::STYLE_BODY_3_MEDIUM);
++  title_label_->SetProperty(
++      views::kFlexBehaviorKey,
++      views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToMinimum,
++                               views::MaximumFlexSizeRule::kUnbounded));
++
++  count_label_ = header->AddChildView(std::make_unique<views::Label>());
++  count_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
++  count_label_->SetTextStyle(views::style::STYLE_BODY_5);
++
++  AddChildView(std::move(header));
++
++  scroll_view_ = AddChildView(std::make_unique<views::ScrollView>());
++  layout->SetFlexForView(scroll_view_, 1);
++  scroll_view_->SetDrawOverflowIndicator(false);
++  scroll_view_->SetVerticalScrollBarMode(
++      views::ScrollView::ScrollBarMode::kHiddenButEnabled);
++  scroll_view_->SetHorizontalScrollBarMode(
++      views::ScrollView::ScrollBarMode::kDisabled);
++  scroll_view_->ClipHeightTo(0, kApproximateRowHeight * kMaxPreferredRows);
++
++  auto rows_container = std::make_unique<views::View>();
++  auto* rows_layout =
++      rows_container->SetLayoutManager(std::make_unique<views::BoxLayout>(
++          views::BoxLayout::Orientation::kVertical, gfx::Insets(), 2));
++  rows_layout->set_cross_axis_alignment(
++      views::BoxLayout::CrossAxisAlignment::kStretch);
++  rows_container_ = scroll_view_->SetContents(std::move(rows_container));
++
++  new_tab_button_ = AddChildView(std::make_unique<views::LabelButton>(
++      base::BindRepeating(&SideTreeTabStripView::CreateNewTab,
++                          base::Unretained(this)),
++      u"+"));
++  new_tab_button_->SetTooltipText(u"New tab");
++  new_tab_button_->SetPreferredSize(gfx::Size(0, kNewTabButtonHeight));
++  new_tab_button_->GetViewAccessibility().SetName(u"New tab");
++
++  tab_strip_model_->AddObserver(this);
++  RebuildRows();
++}
++
++SideTreeTabStripView::~SideTreeTabStripView() = default;
++
++void SideTreeTabStripView::RebuildRows() {
++  rows_.clear();
++  rows_container_->RemoveAllChildViews();
++
++  for (int index = 0; index < tab_strip_model_->count(); ++index) {
++    auto row = std::make_unique<SideTreeTabRowView>(this, BuildRowState(index));
++    rows_.push_back(row.get());
++    rows_container_->AddChildView(std::move(row));
++  }
++
++  UpdateHeader();
++  rows_container_->InvalidateLayout();
++  scroll_view_->InvalidateLayout();
++  InvalidateLayout();
++  SchedulePaint();
++}
++
++void SideTreeTabStripView::RefreshRows() {
++  if (static_cast<int>(rows_.size()) != tab_strip_model_->count()) {
++    RebuildRows();
++    return;
++  }
++
++  for (int index = 0; index < tab_strip_model_->count(); ++index) {
++    rows_[index]->UpdateState(BuildRowState(index));
++  }
++  UpdateHeader();
++}
++
++void SideTreeTabStripView::CreateNewTab() {
++  chrome::NewTab(browser_view_->browser());
++}
++
++views::View* SideTreeTabStripView::GetDefaultFocusableChild() const {
++  if (!tab_strip_model_) {
++    return new_tab_button_;
++  }
++
++  const int active_index = tab_strip_model_->active_index();
++  if (active_index != TabStripModel::kNoTab) {
++    if (views::View* active_row = GetTabAnchorViewAt(active_index)) {
++      return active_row;
++    }
++  }
++
++  if (!rows_.empty()) {
++    return rows_.front();
++  }
++
++  return new_tab_button_;
++}
++
++views::View* SideTreeTabStripView::GetTabAnchorViewAt(int index) const {
++  if (index < 0 || index >= static_cast<int>(rows_.size())) {
++    return nullptr;
++  }
++  return rows_[index];
++}
++
++std::optional<int> SideTreeTabStripView::GetFocusedTabIndex() const {
++  const views::FocusManager* focus_manager = GetFocusManager();
++  if (!focus_manager) {
++    return std::nullopt;
++  }
++
++  const views::View* focused_view = focus_manager->GetFocusedView();
++  if (!focused_view) {
++    return std::nullopt;
++  }
++
++  for (size_t i = 0; i < rows_.size(); ++i) {
++    const views::View* row = rows_[i];
++    if (row && (row == focused_view || row->Contains(focused_view))) {
++      return static_cast<int>(i);
++    }
++  }
++
++  return std::nullopt;
++}
++
++int SideTreeTabStripView::row_count_for_testing() const {
++  return static_cast<int>(rows_.size());
++}
++
++void SideTreeTabStripView::OnTabStripModelChanged(
++    TabStripModel* tab_strip_model,
++    const TabStripModelChange& change,
++    const TabStripSelectionChange& selection) {
++  if (change.type() == TabStripModelChange::kSelectionOnly) {
++    RefreshRows();
++    return;
++  }
++  RebuildRows();
++}
++
++void SideTreeTabStripView::OnTabChangedAt(tabs::TabInterface* tab,
++                                          int index,
++                                          TabChangeType change_type) {
++  RefreshRows();
++}
++
++void SideTreeTabStripView::OnTabPinnedStateChanged(tabs::TabInterface* tab,
++                                                   int index) {
++  RefreshRows();
++}
++
++void SideTreeTabStripView::TabGroupedStateChanged(
++    TabStripModel* tab_strip_model,
++    std::optional<tab_groups::TabGroupId> old_group,
++    std::optional<tab_groups::TabGroupId> new_group,
++    tabs::TabInterface* tab,
++    int index) {
++  RefreshRows();
++}
++
++void SideTreeTabStripView::TabStripEmpty() {
++  RebuildRows();
++}
++
++void SideTreeTabStripView::OnTabStripModelDestroyed(TabStripModel* model) {
++  TabStripModelObserver::OnTabStripModelDestroyed(model);
++  if (tab_strip_model_ == model) {
++    tab_strip_model_ = nullptr;
++  }
++}
++
++void SideTreeTabStripView::ActivateSideTreeTabAt(int index) {
++  if (!ContainsIndex(index)) {
++    return;
++  }
++  tab_strip_model_->ActivateTabAt(
++      index, TabStripUserGestureDetails(
++                 TabStripUserGestureDetails::GestureType::kMouse));
++}
++
++void SideTreeTabStripView::CloseSideTreeTabAt(int index) {
++  if (!ContainsIndex(index)) {
++    return;
++  }
++  tab_strip_model_->CloseWebContentsAt(
++      index, TabCloseTypes::CLOSE_USER_GESTURE |
++                 TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
++}
++
++SideTreeTabRowView::State SideTreeTabStripView::BuildRowState(int index) const {
++  SideTreeTabRowView::State state;
++  state.index = index;
++  if (!ContainsIndex(index)) {
++    return state;
++  }
++
++  tabs::TabInterface* tab = tab_strip_model_->GetTabAtIndex(index);
++  content::WebContents* contents = tab_strip_model_->GetWebContentsAt(index);
++  state.active = tab_strip_model_->active_index() == index;
++  state.pinned = tab && tab->IsPinned();
++
++  if (contents) {
++    state.title = contents->GetTitle();
++    state.url_text = FormatUrlText(contents);
++    state.loading = contents->IsLoading();
++    state.audible = contents->IsCurrentlyAudible();
++    state.muted = contents->IsAudioMuted();
++    state.discarded = contents->WasDiscarded();
++    state.crashed = contents->IsCrashed();
++  }
++
++  return state;
++}
++
++bool SideTreeTabStripView::ContainsIndex(int index) const {
++  return tab_strip_model_ && tab_strip_model_->ContainsIndex(index);
++}
++
++void SideTreeTabStripView::UpdateHeader() {
++  count_label_->SetText(base::UTF8ToUTF16(
++      base::StrCat({std::to_string(tab_strip_model_->count()), " tabs"})));
++}
++
++BEGIN_METADATA(SideTreeTabStripView)
++END_METADATA
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.h
+@@ -0,0 +1,79 @@
++#ifndef CHROME_BROWSER_UI_VIEWS_TABS_SIDETREE_SIDETREE_TAB_STRIP_VIEW_H_
++#define CHROME_BROWSER_UI_VIEWS_TABS_SIDETREE_SIDETREE_TAB_STRIP_VIEW_H_
++
++#include <optional>
++#include <vector>
++
++#include "base/memory/raw_ptr.h"
++#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
++#include "chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.h"
++#include "components/tab_groups/tab_group_id.h"
++#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/views/view.h"
++
++class BrowserView;
++class TabStripModel;
++
++namespace views {
++class Label;
++class LabelButton;
++class ScrollView;
++}  // namespace views
++
++class SideTreeTabStripView : public views::View,
++                             public TabStripModelObserver,
++                             public SideTreeTabRowView::Delegate {
++  METADATA_HEADER(SideTreeTabStripView, views::View)
++
++ public:
++  SideTreeTabStripView(BrowserView* browser_view,
++                       TabStripModel* tab_strip_model);
++  SideTreeTabStripView(const SideTreeTabStripView&) = delete;
++  SideTreeTabStripView& operator=(const SideTreeTabStripView&) = delete;
++  ~SideTreeTabStripView() override;
++
++  void RebuildRows();
++  void RefreshRows();
++  void CreateNewTab();
++
++  views::View* GetDefaultFocusableChild() const;
++  views::View* GetTabAnchorViewAt(int index) const;
++  std::optional<int> GetFocusedTabIndex() const;
++
++  int row_count_for_testing() const;
++
++  void OnTabStripModelChanged(
++      TabStripModel* tab_strip_model,
++      const TabStripModelChange& change,
++      const TabStripSelectionChange& selection) override;
++  void OnTabChangedAt(tabs::TabInterface* tab,
++                      int index,
++                      TabChangeType change_type) override;
++  void OnTabPinnedStateChanged(tabs::TabInterface* tab, int index) override;
++  void TabGroupedStateChanged(TabStripModel* tab_strip_model,
++                              std::optional<tab_groups::TabGroupId> old_group,
++                              std::optional<tab_groups::TabGroupId> new_group,
++                              tabs::TabInterface* tab,
++                              int index) override;
++  void TabStripEmpty() override;
++  void OnTabStripModelDestroyed(TabStripModel* model) override;
++
++  void ActivateSideTreeTabAt(int index) override;
++  void CloseSideTreeTabAt(int index) override;
++
++ private:
++  SideTreeTabRowView::State BuildRowState(int index) const;
++  bool ContainsIndex(int index) const;
++  void UpdateHeader();
++
++  raw_ptr<BrowserView> browser_view_ = nullptr;
++  raw_ptr<TabStripModel> tab_strip_model_ = nullptr;
++  raw_ptr<views::Label> title_label_ = nullptr;
++  raw_ptr<views::Label> count_label_ = nullptr;
++  raw_ptr<views::ScrollView> scroll_view_ = nullptr;
++  raw_ptr<views::View> rows_container_ = nullptr;
++  raw_ptr<views::LabelButton> new_tab_button_ = nullptr;
++  std::vector<raw_ptr<SideTreeTabRowView>> rows_;
++};
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TABS_SIDETREE_SIDETREE_TAB_STRIP_VIEW_H_

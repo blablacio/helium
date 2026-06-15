@@ -368,3 +368,8 @@ helium/ui/compact-debugger-warning.patch
 helium/ui/progress-bar.patch
 helium/ui/exclusive-access-bubble.patch
 helium/ui/hide-page-actions-flag.patch
+
+sidetree/ui/vertical-strip-native-shell.patch
+sidetree/ui/native-tab-bridge.patch
+sidetree/ui/native-tab-polish.patch
+sidetree/ui/native-tab-tree.patch

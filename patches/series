@@ -359,3 +359,8 @@ helium/ui/show-tabs-from-non-account-backends.patch
 helium/ui/compact-debugger-warning.patch
 helium/ui/progress-bar.patch
 helium/ui/exclusive-access-bubble.patch
+
+sidetree/ui/vertical-strip-native-shell.patch
+sidetree/ui/native-tab-bridge.patch
+sidetree/ui/native-tab-polish.patch
+sidetree/ui/native-tab-tree.patch

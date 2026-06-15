@@ -324,3 +324,8 @@ helium/ui/fix-windows-ui-position.patch
 helium/ui/native-frame-materials.patch
 helium/ui/page-zoom-indicator.patch
 helium/ui/helium-noise-page-info.patch
+
+sidetree/ui/vertical-strip-native-shell.patch
+sidetree/ui/native-tab-bridge.patch
+sidetree/ui/native-tab-polish.patch
+sidetree/ui/native-tab-tree.patch

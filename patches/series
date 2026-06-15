@@ -348,3 +348,8 @@ helium/ui/page-zoom-indicator.patch
 helium/ui/add-more-zoom-presets.patch
 helium/ui/helium-noise-page-info.patch
 helium/ui/show-tabs-from-non-account-backends.patch
+
+sidetree/ui/vertical-strip-native-shell.patch
+sidetree/ui/native-tab-bridge.patch
+sidetree/ui/native-tab-polish.patch
+sidetree/ui/native-tab-tree.patch

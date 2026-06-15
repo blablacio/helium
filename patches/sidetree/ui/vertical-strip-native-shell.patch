@@ -1,0 +1,115 @@
+--- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
+@@ -70,14 +70,17 @@
+ #include "ui/views/background.h"
+ #include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/focus_ring.h"
++#include "ui/views/controls/label.h"
+ #include "ui/views/controls/resize_area.h"
+ #include "ui/views/controls/scroll_view.h"
+ #include "ui/views/controls/separator.h"
+ #include "ui/views/focus/focus_manager.h"
+ #include "ui/views/interaction/element_tracker_views.h"
++#include "ui/views/layout/box_layout.h"
+ #include "ui/views/layout/flex_layout.h"
+ #include "ui/views/layout/flex_layout_types.h"
+ #include "ui/views/layout/layout_types.h"
++#include "ui/views/style/typography.h"
+ #include "ui/views/view.h"
+ #include "ui/views/view_class_properties.h"
+ #include "ui/views/view_utils.h"
+@@ -98,6 +101,36 @@ constexpr ShadowFrameView::ShadowAlpha k
+      .light_ambient = 0.0,
+      .dark_key = 0.6,
+      .dark_ambient = 0.0});
++
++std::unique_ptr<views::View> CreateSideTreeNativeShellView() {
++  auto shell = std::make_unique<views::View>();
++  auto* const layout =
++      shell->SetLayoutManager(std::make_unique<views::BoxLayout>(
++          views::BoxLayout::Orientation::kVertical,
++          gfx::Insets::TLBR(12, 10, 8, 10), 6));
++  layout->set_cross_axis_alignment(
++      views::BoxLayout::CrossAxisAlignment::kStretch);
++  shell->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++  shell->GetViewAccessibility().SetRole(ax::mojom::Role::kGroup);
++  shell->GetViewAccessibility().SetName(u"SideTree");
++
++  auto title = std::make_unique<views::Label>(u"SideTree");
++  title->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  title->SetTextStyle(views::style::STYLE_BODY_3_MEDIUM);
++  shell->AddChildView(std::move(title));
++
++  auto stage = std::make_unique<views::Label>(u"C1 native shell");
++  stage->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  stage->SetTextStyle(views::style::STYLE_BODY_4);
++  shell->AddChildView(std::move(stage));
++
++  auto backing = std::make_unique<views::Label>(u"Tab model stays live");
++  backing->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  backing->SetTextStyle(views::style::STYLE_BODY_4);
++  shell->AddChildView(std::move(backing));
++
++  return shell;
++}
+ }  // namespace
+ 
+ DEFINE_CLASS_CUSTOM_ELEMENT_EVENT_TYPE(VerticalTabStripRegionView,
+@@ -211,6 +244,14 @@ VerticalTabStripRegionView::VerticalTabS
+                                    views::MinimumFlexSizeRule::kPreferred,
+                                    views::MaximumFlexSizeRule::kPreferred));
+ 
++  sidetree_shell_view_ = AddChildView(CreateSideTreeNativeShellView());
++  sidetree_shell_view_->SetProperty(
++      views::kFlexBehaviorKey,
++      views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToMinimum,
++                               views::MaximumFlexSizeRule::kPreferred));
++  sidetree_shell_view_->SetProperty(
++      views::kMarginsKey, gfx::Insets::TLBR(0, 0, kBottomContainerGap, 0));
++
+   bottom_button_container_ =
+       AddChildView(std::make_unique<VerticalTabStripBottomContainer>(
+           state_controller_, root_action_item, browser_view->browser(),
+@@ -519,6 +560,10 @@ void VerticalTabStripRegionView::Layout(
+ }
+ 
+ views::View* VerticalTabStripRegionView::GetDefaultFocusableChild() {
++  if (sidetree_shell_view_) {
++    return sidetree_shell_view_;
++  }
++
+   const int active_index = tab_strip_model_->active_index();
+   if (active_index != TabStripModel::kNoTab) {
+     return GetTabAnchorViewAt(active_index);
+@@ -1062,6 +1107,8 @@ views::View* VerticalTabStripRegionView:
+ 
+   tab_strip_view_ =
+       static_cast<VerticalTabStripView*>(AddChildView(std::move(view)));
++  tab_strip_view_->SetVisible(false);
++  tab_strip_view_->SetProperty(views::kViewIgnoredByLayoutKey, true);
+   tab_strip_view_->SetProperty(
+       views::kFlexBehaviorKey,
+       views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToMinimum,
+@@ -1141,6 +1188,12 @@ void VerticalTabStripRegionView::OnColla
+                            !state_controller_->IsExpandOnHoverEnabled() ||
+                            resize_area_->is_resizing());
+ 
++  if (sidetree_shell_view_) {
++    sidetree_shell_view_->SetProperty(
++        views::kMarginsKey,
++        gfx::Insets::TLBR(0, padding, kBottomContainerGap, padding));
++  }
++
+   resize_area_width_ = collapsed ? kCollapsedResizeAreaWidth : kResizeAreaWidth;
+ 
+   if (tab_strip_view_) {
+--- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
++++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
+@@ -303,6 +303,7 @@ class VerticalTabStripRegionView final
+   bool zen_mode_floating_style_ = false;
+ 
+   raw_ptr<VerticalTabStripView> tab_strip_view_ = nullptr;
++  raw_ptr<views::View> sidetree_shell_view_ = nullptr;
+   raw_ptr<VerticalTabStripBottomContainer> bottom_button_container_ = nullptr;
+   raw_ptr<views::View> gemini_button_ = nullptr;
+   raw_ptr<views::ResizeArea> resize_area_ = nullptr;

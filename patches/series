@@ -314,3 +314,8 @@ helium/ui/hide-pip-live-caption-button.patch
 helium/ui/disable-ink-ripple-effect.patch
 helium/ui/dont-antialias-rects.patch
 helium/ui/fix-windows-ui-position.patch
+
+sidetree/ui/vertical-strip-native-shell.patch
+sidetree/ui/native-tab-bridge.patch
+sidetree/ui/native-tab-polish.patch
+sidetree/ui/native-tab-tree.patch

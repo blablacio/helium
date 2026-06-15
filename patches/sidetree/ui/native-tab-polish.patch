@@ -1,0 +1,639 @@
+--- a/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.cc
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.cc
+@@ -5,17 +5,23 @@
+ 
+ #include "base/functional/bind.h"
+ #include "base/strings/strcat.h"
++#include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/browser/ui/layout_constants.h"
++#include "components/vector_icons/vector_icons.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "ui/accessibility/ax_enums.mojom.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/color/color_provider.h"
+ #include "ui/events/event.h"
+ #include "ui/events/keycodes/keyboard_codes.h"
+-#include "ui/gfx/color_palette.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/geometry/size.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/background.h"
+-#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/button/image_button.h"
++#include "ui/views/controls/button/image_button_factory.h"
++#include "ui/views/controls/focus_ring.h"
++#include "ui/views/controls/highlight_path_generator.h"
+ #include "ui/views/controls/label.h"
+ #include "ui/views/layout/flex_layout.h"
+ #include "ui/views/layout/flex_layout_types.h"
+@@ -24,10 +30,18 @@
+ 
+ namespace {
+ 
+-constexpr int kRowHeight = 36;
+-constexpr int kMarkerWidth = 28;
++constexpr int kMarkerWidth = 22;
+ constexpr int kCloseWidth = 28;
+-constexpr int kCornerRadius = 4;
++constexpr int kCloseIconSize = 14;
++constexpr int kStatusMaxWidth = 68;
++
++int RowHeight() {
++  return GetLayoutConstant(LayoutConstant::kVerticalTabHeight);
++}
++
++int RowCornerRadius() {
++  return GetLayoutConstant(LayoutConstant::kVerticalTabCornerRadius);
++}
+ 
+ std::u16string NonEmptyTitle(const SideTreeTabRowView::State& state) {
+   if (!state.title.empty()) {
+@@ -44,19 +58,25 @@ std::u16string NonEmptyTitle(const Sideb
+ SideTreeTabRowView::SideTreeTabRowView(Delegate* delegate, State state)
+     : delegate_(delegate), state_(std::move(state)) {
+   SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
+-  SetPreferredSize(gfx::Size(0, kRowHeight));
++  SetPreferredSize(gfx::Size(0, RowHeight()));
++  SetNotifyEnterExitOnChild(true);
+   GetViewAccessibility().SetRole(ax::mojom::Role::kButton);
++  views::FocusRing::Install(this);
++  views::FocusRing::Get(this)->SetOutsetFocusRingDisabled(true);
++  views::HighlightPathGenerator::Install(
++      this, std::make_unique<views::RoundRectHighlightPathGenerator>(
++                gfx::Insets(), RowCornerRadius()));
+ 
+   auto* layout = SetLayoutManager(std::make_unique<views::FlexLayout>());
+   layout->SetOrientation(views::LayoutOrientation::kHorizontal)
+       .SetMainAxisAlignment(views::LayoutAlignment::kStart)
+       .SetCrossAxisAlignment(views::LayoutAlignment::kCenter)
+-      .SetInteriorMargin(gfx::Insets::TLBR(0, 8, 0, 4))
+-      .SetDefault(views::kMarginsKey, gfx::Insets::TLBR(0, 0, 0, 6));
++      .SetInteriorMargin(gfx::Insets::TLBR(0, 6, 0, 3))
++      .SetDefault(views::kMarginsKey, gfx::Insets::TLBR(0, 0, 0, 5));
+ 
+   marker_label_ = AddChildView(std::make_unique<views::Label>());
+   marker_label_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+-  marker_label_->SetPreferredSize(gfx::Size(kMarkerWidth, kRowHeight));
++  marker_label_->SetPreferredSize(gfx::Size(kMarkerWidth, RowHeight()));
+ 
+   title_label_ = AddChildView(std::make_unique<views::Label>());
+   title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+@@ -70,12 +90,15 @@ SideTreeTabRowView::SideTreeTabRowView(D
+   status_label_ = AddChildView(std::make_unique<views::Label>());
+   status_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
+   status_label_->SetTextStyle(views::style::STYLE_BODY_5);
++  status_label_->SetMaximumWidthSingleLine(kStatusMaxWidth);
+ 
+-  close_button_ = AddChildView(std::make_unique<views::LabelButton>(
++  close_button_ = AddChildView(views::CreateVectorImageButtonWithNativeTheme(
+       base::BindRepeating(&SideTreeTabRowView::Close, base::Unretained(this)),
+-      u"x"));
++      vector_icons::kCloseIcon, kCloseIconSize, kColorToolbarButtonIcon,
++      kColorToolbarButtonIconDisabled));
+   close_button_->SetTooltipText(u"Close tab");
+-  close_button_->SetPreferredSize(gfx::Size(kCloseWidth, kRowHeight));
++  close_button_->SetPreferredSize(gfx::Size(kCloseWidth, RowHeight()));
++  close_button_->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
+ 
+   Refresh();
+ }
+@@ -89,12 +112,31 @@ void SideTreeTabRowView::UpdateState(Sta
+ 
+ bool SideTreeTabRowView::OnMousePressed(const ui::MouseEvent& event) {
+   if (event.IsOnlyLeftMouseButton()) {
++    pressed_ = true;
++    UpdateRowVisualState();
+     Activate();
+     return true;
+   }
+   return views::View::OnMousePressed(event);
+ }
+ 
++void SideTreeTabRowView::OnMouseReleased(const ui::MouseEvent& event) {
++  pressed_ = false;
++  UpdateRowVisualState();
++  views::View::OnMouseReleased(event);
++}
++
++void SideTreeTabRowView::OnMouseEntered(const ui::MouseEvent& event) {
++  views::View::OnMouseEntered(event);
++  UpdateRowVisualState();
++}
++
++void SideTreeTabRowView::OnMouseExited(const ui::MouseEvent& event) {
++  pressed_ = false;
++  views::View::OnMouseExited(event);
++  UpdateRowVisualState();
++}
++
+ bool SideTreeTabRowView::OnKeyPressed(const ui::KeyEvent& event) {
+   if (event.key_code() == ui::VKEY_RETURN ||
+       event.key_code() == ui::VKEY_SPACE) {
+@@ -118,6 +160,17 @@ void SideTreeTabRowView::OnThemeChanged(
+   Refresh();
+ }
+ 
++void SideTreeTabRowView::OnFocus() {
++  views::View::OnFocus();
++  UpdateRowVisualState();
++}
++
++void SideTreeTabRowView::OnBlur() {
++  views::View::OnBlur();
++  pressed_ = false;
++  UpdateRowVisualState();
++}
++
+ void SideTreeTabRowView::Activate() {
+   if (delegate_) {
+     delegate_->ActivateSideTreeTabAt(state_.index);
+@@ -139,13 +192,54 @@ void SideTreeTabRowView::Refresh() {
+   close_button_->GetViewAccessibility().SetName(
+       base::StrCat({u"Close ", NonEmptyTitle(state_)}));
+ 
+-  const SkColor background_color =
+-      state_.active ? gfx::kGoogleBlue050 : SK_ColorTRANSPARENT;
+-  SetBackground(
+-      views::CreateRoundedRectBackground(background_color, kCornerRadius));
++  UpdateRowVisualState();
++}
++
++void SideTreeTabRowView::UpdateRowVisualState() {
++  marker_label_->SetEnabledColor(ResolveSecondaryTextColor());
++  title_label_->SetEnabledColor(ResolvePrimaryTextColor());
++  status_label_->SetEnabledColor(ResolveSecondaryTextColor());
++  close_button_->SetVisible(state_.active || IsMouseHovered() || HasFocus() ||
++                            close_button_->HasFocus());
++  SetBackground(views::CreateRoundedRectBackground(ResolveRowBackgroundColor(),
++                                                   RowCornerRadius()));
+   SchedulePaint();
+ }
+ 
++SkColor SideTreeTabRowView::ResolveRowBackgroundColor() const {
++  const auto* cp = GetColorProvider();
++  if (!cp) {
++    return SK_ColorTRANSPARENT;
++  }
++  if (pressed_) {
++    return cp->GetColor(kColorToolbarInkDropRipple);
++  }
++  if (state_.active) {
++    return cp->GetColor(kColorTabBackgroundActiveFrameActive);
++  }
++  if (IsMouseHovered() || HasFocus() || close_button_->HasFocus()) {
++    return cp->GetColor(kColorTabBackgroundInactiveHoverFrameActive);
++  }
++  return SK_ColorTRANSPARENT;
++}
++
++SkColor SideTreeTabRowView::ResolvePrimaryTextColor() const {
++  const auto* cp = GetColorProvider();
++  if (!cp) {
++    return SK_ColorBLACK;
++  }
++  return cp->GetColor(state_.active ? kColorTabForegroundActiveFrameActive
++                                    : kColorTabForegroundInactiveFrameActive);
++}
++
++SkColor SideTreeTabRowView::ResolveSecondaryTextColor() const {
++  const auto* cp = GetColorProvider();
++  if (!cp) {
++    return SK_ColorGRAY;
++  }
++  return cp->GetColor(kColorToolbarButtonIcon);
++}
++
+ std::u16string SideTreeTabRowView::MarkerText() const {
+   if (state_.active) {
+     return u"*";
+--- a/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.h
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.h
+@@ -4,13 +4,14 @@
+ #include <string>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "third_party/skia/include/core/SkColor.h"
+ #include "ui/base/metadata/metadata_header_macros.h"
+ #include "ui/events/event.h"
+ #include "ui/views/view.h"
+ 
+ namespace views {
++class ImageButton;
+ class Label;
+-class LabelButton;
+ }  // namespace views
+ 
+ class SideTreeTabRowView : public views::View {
+@@ -50,24 +51,34 @@ class SideTreeTabRowView : public views:
+   views::Label* title_label_for_testing() { return title_label_; }
+ 
+   bool OnMousePressed(const ui::MouseEvent& event) override;
++  void OnMouseReleased(const ui::MouseEvent& event) override;
++  void OnMouseEntered(const ui::MouseEvent& event) override;
++  void OnMouseExited(const ui::MouseEvent& event) override;
+   bool OnKeyPressed(const ui::KeyEvent& event) override;
+   void OnGestureEvent(ui::GestureEvent* event) override;
+   void OnThemeChanged() override;
++  void OnFocus() override;
++  void OnBlur() override;
+ 
+  private:
+   void Activate();
+   void Close();
+   void Refresh();
++  void UpdateRowVisualState();
++  SkColor ResolveRowBackgroundColor() const;
++  SkColor ResolvePrimaryTextColor() const;
++  SkColor ResolveSecondaryTextColor() const;
+   std::u16string MarkerText() const;
+   std::u16string StatusText() const;
+   std::u16string AccessibleName() const;
+ 
+   raw_ptr<Delegate> delegate_ = nullptr;
+   State state_;
++  bool pressed_ = false;
+   raw_ptr<views::Label> marker_label_ = nullptr;
+   raw_ptr<views::Label> title_label_ = nullptr;
+   raw_ptr<views::Label> status_label_ = nullptr;
+-  raw_ptr<views::LabelButton> close_button_ = nullptr;
++  raw_ptr<views::ImageButton> close_button_ = nullptr;
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_VIEWS_TABS_SIDETREE_SIDETREE_TAB_ROW_VIEW_H_
+--- a/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
+@@ -9,8 +9,11 @@
+ #include "base/functional/bind.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "chrome/app/vector_icons/vector_icons.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/tabs/tab_enums.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_user_gesture_details.h"
+@@ -20,7 +23,10 @@
+ #include "ui/base/metadata/metadata_impl_macros.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+-#include "ui/views/controls/button/label_button.h"
++#include "ui/views/background.h"
++#include "ui/views/controls/button/image_button.h"
++#include "ui/views/controls/button/image_button_factory.h"
++#include "ui/views/controls/highlight_path_generator.h"
+ #include "ui/views/controls/label.h"
+ #include "ui/views/controls/scroll_view.h"
+ #include "ui/views/focus/focus_manager.h"
+@@ -33,10 +39,13 @@
+ 
+ namespace {
+ 
+-constexpr int kApproximateRowHeight = 38;
+ constexpr int kHeaderHeight = 28;
+ constexpr int kMaxPreferredRows = 12;
+-constexpr int kNewTabButtonHeight = 32;
++constexpr int kRowSpacing = 3;
++
++int ApproximateRowHeight() {
++  return GetLayoutConstant(LayoutConstant::kVerticalTabHeight) + kRowSpacing;
++}
+ 
+ std::u16string FormatUrlText(content::WebContents* contents) {
+   if (!contents) {
+@@ -64,7 +73,7 @@ SideTreeTabStripView::SideTreeTabStripVi
+ 
+   auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
+       views::BoxLayout::Orientation::kVertical, gfx::Insets::TLBR(8, 8, 8, 8),
+-      6));
++      5));
+   layout->set_cross_axis_alignment(
+       views::BoxLayout::CrossAxisAlignment::kStretch);
+ 
+@@ -98,26 +107,37 @@ SideTreeTabStripView::SideTreeTabStripVi
+       views::ScrollView::ScrollBarMode::kHiddenButEnabled);
+   scroll_view_->SetHorizontalScrollBarMode(
+       views::ScrollView::ScrollBarMode::kDisabled);
+-  scroll_view_->ClipHeightTo(0, kApproximateRowHeight * kMaxPreferredRows);
++  scroll_view_->ClipHeightTo(0, ApproximateRowHeight() * kMaxPreferredRows);
+ 
+   auto rows_container = std::make_unique<views::View>();
+   auto* rows_layout =
+       rows_container->SetLayoutManager(std::make_unique<views::BoxLayout>(
+-          views::BoxLayout::Orientation::kVertical, gfx::Insets(), 2));
++          views::BoxLayout::Orientation::kVertical, gfx::Insets(),
++          kRowSpacing));
+   rows_layout->set_cross_axis_alignment(
+       views::BoxLayout::CrossAxisAlignment::kStretch);
+   rows_container_ = scroll_view_->SetContents(std::move(rows_container));
+ 
+-  new_tab_button_ = AddChildView(std::make_unique<views::LabelButton>(
++  new_tab_button_ = AddChildView(views::CreateVectorImageButtonWithNativeTheme(
+       base::BindRepeating(&SideTreeTabStripView::CreateNewTab,
+                           base::Unretained(this)),
+-      u"+"));
++      kAddIcon,
++      GetLayoutConstant(LayoutConstant::kVerticalTabStripButtonIconSize),
++      kColorToolbarButtonIcon, kColorToolbarButtonIconDisabled));
+   new_tab_button_->SetTooltipText(u"New tab");
+-  new_tab_button_->SetPreferredSize(gfx::Size(0, kNewTabButtonHeight));
++  new_tab_button_->SetPreferredSize(gfx::Size(
++      0, GetLayoutConstant(LayoutConstant::kVerticalTabStripNewTabButtonSize)));
++  new_tab_button_->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
+   new_tab_button_->GetViewAccessibility().SetName(u"New tab");
++  views::HighlightPathGenerator::Install(
++      new_tab_button_,
++      std::make_unique<views::RoundRectHighlightPathGenerator>(
++          gfx::Insets(),
++          GetLayoutConstant(LayoutConstant::kVerticalTabCornerRadius)));
+ 
+   tab_strip_model_->AddObserver(this);
+   RebuildRows();
++  UpdateColors();
+ }
+ 
+ SideTreeTabStripView::~SideTreeTabStripView() = default;
+@@ -155,6 +175,14 @@ void SideTreeTabStripView::CreateNewTab(
+   chrome::NewTab(browser_view_->browser());
+ }
+ 
++void SideTreeTabStripView::OnThemeChanged() {
++  views::View::OnThemeChanged();
++  UpdateColors();
++  if (tab_strip_model_) {
++    RefreshRows();
++  }
++}
++
+ views::View* SideTreeTabStripView::GetDefaultFocusableChild() const {
+   if (!tab_strip_model_) {
+     return new_tab_button_;
+@@ -300,5 +328,15 @@ void SideTreeTabStripView::UpdateHeader(
+       base::StrCat({std::to_string(tab_strip_model_->count()), " tabs"})));
+ }
+ 
++void SideTreeTabStripView::UpdateColors() {
++  SetBackground(views::CreateSolidBackground(kColorSidePanelBackground));
++  scroll_view_->SetBackgroundColor(kColorSidePanelBackground);
++  rows_container_->SetBackground(
++      views::CreateSolidBackground(kColorSidePanelBackground));
++  title_label_->SetEnabledColor(kColorSidePanelEntryTitle);
++  count_label_->SetEnabledColor(kColorToolbarButtonIcon);
++  SchedulePaint();
++}
++
+ BEGIN_METADATA(SideTreeTabStripView)
+ END_METADATA
+--- a/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.h
++++ b/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.h
+@@ -15,8 +15,8 @@ class BrowserView;
+ class TabStripModel;
+ 
+ namespace views {
++class ImageButton;
+ class Label;
+-class LabelButton;
+ class ScrollView;
+ }  // namespace views
+ 
+@@ -35,6 +35,7 @@ class SideTreeTabStripView : public view
+   void RebuildRows();
+   void RefreshRows();
+   void CreateNewTab();
++  void OnThemeChanged() override;
+ 
+   views::View* GetDefaultFocusableChild() const;
+   views::View* GetTabAnchorViewAt(int index) const;
+@@ -65,6 +66,7 @@ class SideTreeTabStripView : public view
+   SideTreeTabRowView::State BuildRowState(int index) const;
+   bool ContainsIndex(int index) const;
+   void UpdateHeader();
++  void UpdateColors();
+ 
+   raw_ptr<BrowserView> browser_view_ = nullptr;
+   raw_ptr<TabStripModel> tab_strip_model_ = nullptr;
+@@ -72,7 +74,7 @@ class SideTreeTabStripView : public view
+   raw_ptr<views::Label> count_label_ = nullptr;
+   raw_ptr<views::ScrollView> scroll_view_ = nullptr;
+   raw_ptr<views::View> rows_container_ = nullptr;
+-  raw_ptr<views::LabelButton> new_tab_button_ = nullptr;
++  raw_ptr<views::ImageButton> new_tab_button_ = nullptr;
+   std::vector<raw_ptr<SideTreeTabRowView>> rows_;
+ };
+ 
+--- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
+@@ -242,6 +242,11 @@ VerticalTabStripRegionView::VerticalTabS
+       views::kMarginsKey,
+       gfx::Insets::TLBR(kBottomContainerGap, region_horizontal_padding,
+                         0, region_horizontal_padding));
++  if (sidetree_shell_view_) {
++    // SideTree owns the new-tab affordance in the replacement strip.
++    bottom_button_container_->SetVisible(false);
++    bottom_button_container_->SetProperty(views::kViewIgnoredByLayoutKey, true);
++  }
+ 
+   gemini_button_ = AddChildView(std::make_unique<views::View>());
+ 
+@@ -262,6 +267,7 @@ VerticalTabStripRegionView::VerticalTabS
+ 
+   state_controller_->SetDelegate(this);
+   target_collapse_state_ = state_controller_->GetState();
++  ForceSideTreeExpandedState();
+   OnCollapseStateChanged(state_controller_->GetCollapseState());
+   collapsed_state_changed_subscription_ =
+       state_controller_->RegisterOnCollapseChanged(base::BindRepeating(
+@@ -360,7 +366,8 @@ void VerticalTabStripRegionView::OnAnima
+             kAnimationCompletedEvent, this);
+       }
+       if (motion == TabStripAnimations::kCollapse) {
+-        update_state_controller_collapsed_callback_.Run(true);
++        update_state_controller_collapsed_callback_.Run(
++            !IsSideTreeShellActive());
+       }
+       InvalidateLayout();
+       break;
+@@ -383,7 +390,8 @@ void VerticalTabStripRegionView::OnAnima
+       // on hover animations, but since the collapse state must have already
+       // been true in that case, this would be a no-op.
+       if (!target_collapse_state_.collapsed) {
+-        update_state_controller_collapsed_callback_.Run(true);
++        update_state_controller_collapsed_callback_.Run(
++            !IsSideTreeShellActive());
+       }
+       break;
+   }
+@@ -397,7 +405,8 @@ bool VerticalTabStripRegionView::IsPosit
+     return false;
+   }
+ 
+-  if (IsHitInView(bottom_button_container_, point)) {
++  if (bottom_button_container_->GetVisible() &&
++      IsHitInView(bottom_button_container_, point)) {
+     gfx::Point point_in_child = point;
+     views::View::ConvertPointToTarget(this, bottom_button_container_,
+                                       &point_in_child);
+@@ -554,15 +563,22 @@ views::View* VerticalTabStripRegionView:
+ 
+ gfx::Size VerticalTabStripRegionView::GetMinimumSize() const {
+   auto min_size = TabStripRegionView::GetMinimumSize();
+-  min_size.set_width((state_controller_->IsCollapsed() || IsAnimatingSize())
+-                         ? kCollapsedWidth
+-                         : kUncollapsedMinWidth);
++  const bool collapsed =
++      !IsSideTreeShellActive() &&
++      (state_controller_->IsCollapsed() || IsAnimatingSize());
++  min_size.set_width(collapsed ? kCollapsedWidth : kUncollapsedMinWidth);
+   return min_size;
+ }
+ 
+ gfx::Size VerticalTabStripRegionView::CalculatePreferredSize(
+     const views::SizeBounds& available_size) const {
+   auto size = TabStripRegionView::CalculatePreferredSize(available_size);
++  if (IsSideTreeShellActive()) {
++    size.set_width(std::clamp(target_collapse_state_.uncollapsed_width,
++                              kUncollapsedMinWidth, kUncollapsedMaxWidth));
++    return size;
++  }
++
+   const auto* controller =
+       BrowserAnimationController::From(browser_view_->browser());
+   const auto motion =
+@@ -967,6 +983,31 @@ void VerticalTabStripRegionView::HandleD
+ 
+ void VerticalTabStripRegionView::OnResize(int resize_amount,
+                                           bool done_resizing) {
++  if (IsSideTreeShellActive()) {
++    if (!starting_width_on_resize_.has_value()) {
++      starting_width_on_resize_ = width();
++    }
++
++    const int resize_delta = state_controller_->IsTabStripRightAligned()
++                                 ? -resize_amount
++                                 : resize_amount;
++    const int proposed_width = starting_width_on_resize_.value() + resize_delta;
++    target_collapse_state_.collapsed = false;
++    target_collapse_state_.uncollapsed_width =
++        std::clamp(proposed_width, kUncollapsedMinWidth, kUncollapsedMaxWidth);
++
++    if (done_resizing) {
++      starting_width_on_resize_ = std::nullopt;
++      resize_area_->SetVisible(true);
++      state_controller_->SetUncollapsedWidth(
++          target_collapse_state_.uncollapsed_width);
++    }
++
++    ForceSideTreeExpandedState();
++    InvalidateLayout();
++    return;
++  }
++
+   CHECK(tab_strip_view_);
+   tab_strip_view_->SetIsAnimatingSize(!done_resizing);
+   if (!starting_width_on_resize_.has_value()) {
+@@ -1048,12 +1089,23 @@ void VerticalTabStripRegionView::SetColl
+ }
+ 
+ bool VerticalTabStripRegionView::IsCollapsing() {
++  if (IsSideTreeShellActive()) {
++    return false;
++  }
++
+   return BrowserAnimationController::From(browser_view_->browser())
+              ->GetCurrentMotion(TabStripAnimations::kVerticalTabStrip) ==
+          TabStripAnimations::kCollapse;
+ }
+ 
+ void VerticalTabStripRegionView::RequestCollapse(bool collapse) {
++  if (IsSideTreeShellActive()) {
++    ForceSideTreeExpandedState();
++    OnCollapseStateChanged(tabs::VerticalTabStripCollapseState::kExpanded);
++    InvalidateLayout();
++    return;
++  }
++
+   target_collapse_state_.collapsed = collapse;
+   const auto motion =
+       collapse ? TabStripAnimations::kCollapse : TabStripAnimations::kExpand;
+@@ -1098,6 +1150,27 @@ void VerticalTabStripRegionView::ClickEv
+   }
+ }
+ 
++bool VerticalTabStripRegionView::IsSideTreeShellActive() const {
++  return sidetree_shell_view_ != nullptr;
++}
++
++void VerticalTabStripRegionView::ForceSideTreeExpandedState() {
++  if (!IsSideTreeShellActive()) {
++    return;
++  }
++
++  // C2 replaces the native vertical tab strip with SideTree, so Chromium's
++  // collapsed-strip mode is disabled until SideTree has its own collapse model.
++  target_collapse_state_.collapsed = false;
++  ResetExpandOnHoverTimers();
++  is_expanded_on_hover_ = false;
++
++  if (!update_state_controller_collapsed_callback_.is_null() &&
++      state_controller_->IsCollapsed()) {
++    update_state_controller_collapsed_callback_.Run(false);
++  }
++}
++
+ views::View* VerticalTabStripRegionView::SetTabStripView(
+     std::unique_ptr<views::View> view) {
+   CHECK(views::IsViewClass<VerticalTabStripView>(view.get()));
+@@ -1179,6 +1252,12 @@ void VerticalTabStripRegionView::UpdateI
+ 
+ void VerticalTabStripRegionView::OnCollapseStateChanged(
+     tabs::VerticalTabStripCollapseState state) {
++  if (IsSideTreeShellActive() &&
++      state != tabs::VerticalTabStripCollapseState::kExpanded) {
++    ForceSideTreeExpandedState();
++    state = tabs::VerticalTabStripCollapseState::kExpanded;
++  }
++
+   // Apply padding immediately at the start of the animation by including
+   // the collapsing state.
+   bool collapsed = state != tabs::VerticalTabStripCollapseState::kExpanded;
+@@ -1220,9 +1299,12 @@ gfx::Rect VerticalTabStripRegionView::Ge
+   gfx::Rect tab_strip_draggable_bounds =
+       sidetree_shell_view_ ? sidetree_shell_view_->GetBoundsInScreen()
+                            : tab_strip_view_->GetBoundsInScreen();
++  const int bottom_container_height =
++      bottom_button_container_->GetVisible()
++          ? bottom_button_container_->GetMinimumSize().height()
++          : 0;
+   tab_strip_draggable_bounds.set_height(
+-      GetBoundsInScreen().bottom() -
+-      bottom_button_container_->GetMinimumSize().height() -
++      GetBoundsInScreen().bottom() - bottom_container_height -
+       flex_layout_->interior_margin().height() -
+       tab_strip_draggable_bounds.y());
+   return tab_strip_draggable_bounds;
+@@ -1253,6 +1335,12 @@ void VerticalTabStripRegionView::OnChild
+ }
+ 
+ void VerticalTabStripRegionView::OnExpandOnHoverEnabledChanged(bool enabled) {
++  if (IsSideTreeShellActive()) {
++    resize_area_->SetVisible(true);
++    ForceSideTreeExpandedState();
++    return;
++  }
++
+   resize_area_->SetVisible(!state_controller_->IsCollapsed() || !enabled ||
+                            resize_area_->is_resizing());
+   UpdateExpandOnHoverState();
+@@ -1260,6 +1348,11 @@ void VerticalTabStripRegionView::OnExpan
+ 
+ void VerticalTabStripRegionView::UpdateExpandOnHoverState(
+     std::optional<bool> hovered) {
++  if (IsSideTreeShellActive()) {
++    ForceSideTreeExpandedState();
++    return;
++  }
++
+   // If not collapsed, then we shouldn't be in or entering the expand on hover
+   // state.
+   if (!state_controller_->ShouldDisplayVerticalTabs() ||

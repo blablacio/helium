@@ -37,7 +37,7 @@ Index: src/chrome/browser/ui/BUILD.gn
        "views/tabs/tab.cc",
        "views/tabs/tab.h",
        "views/tabs/tab/alert_indicator_button.cc",
-@@ -6029,6 +6046,84 @@
+@@ -5743,6 +5760,84 @@
    public_deps = [ "//ui/base/interaction" ]
  }
  
@@ -119,9 +119,9 @@ Index: src/chrome/browser/ui/BUILD.gn
 +  ]
 +}
 +
- if (is_android) {
-   java_cpp_enum("adaptive_toolbar_enums_java") {
-     sources = [ "android/toolbar/adaptive_toolbar_enums.h" ]
+ if (use_aura) {
+   source_set("overscroll_pref_manager") {
+     sources = [
 Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_order.cc
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
@@ -17868,7 +17868,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view_unittest.
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view_unittest.cc	2026-06-14 03:25:53.194597898 +0300
-@@ -0,0 +1,1458 @@
+@@ -0,0 +1,1453 @@
 +#include "chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.h"
 +
 +#include <memory>

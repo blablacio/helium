@@ -3027,7 +3027,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
 +                           &SideTreeManagementContentsView::OpenWorkspaceEditor,
 +                           base::Unretained(this)),
 +                       workspace_id);
-+    AddRowActionButton(actions, u"Delete workspace", kTrashCanIcon,
++    AddRowActionButton(actions, u"Delete workspace", kTrashCanOldIcon,
 +                       archive_workspace_callback_, workspace_id);
 +  }
 +
@@ -3041,7 +3041,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
 +                           &SideTreeManagementContentsView::OpenContainerEditor,
 +                           base::Unretained(this)),
 +                       container_id);
-+    AddRowActionButton(actions, u"Remove container", kTrashCanIcon,
++    AddRowActionButton(actions, u"Remove container", kTrashCanOldIcon,
 +                       remove_container_callback_, container_id);
 +  }
 +
@@ -3083,7 +3083,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
 +            ButtonCallbackFromClosure(base::BindRepeating(
 +                &SideTreeManagementContentsView::CloseEditor,
 +                base::Unretained(this))),
-+            vector_icons::kBackArrowIcon, kManagementActionIconSize,
++            vector_icons::kBackArrowOldIcon, kManagementActionIconSize,
 +            kColorToolbarButtonIcon, kColorToolbarButtonIconDisabled));
 +    back_button->SetPreferredSize(
 +        gfx::Size(kManagementActionButtonSize, kManagementActionButtonSize));
@@ -4582,7 +4582,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
 +    return kFingerprintIcon;
 +  }
 +  if (icon == "briefcase") {
-+    return vector_icons::kBusinessIcon;
++    return vector_icons::kBusinessOldIcon;
 +  }
 +  if (icon == "dollar") {
 +    return vector_icons::kWorkIcon;
@@ -4597,7 +4597,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
 +    return vector_icons::kFlightIcon;
 +  }
 +  if (icon == "food" || icon == "fruit" || icon == "pet") {
-+    return vector_icons::kDogfoodIcon;
++    return vector_icons::kDogfoodOldIcon;
 +  }
 +  if (icon == "tree" || icon == "chill" || icon == "fence") {
 +    return vector_icons::kFolderOpenIcon;

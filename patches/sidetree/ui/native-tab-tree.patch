@@ -17868,7 +17868,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view_unittest.
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view_unittest.cc	2026-06-14 03:25:53.194597898 +0300
-@@ -0,0 +1,1453 @@
+@@ -0,0 +1,1456 @@
 +#include "chrome/browser/ui/views/tabs/sidetree/sidetree_tab_row_view.h"
 +
 +#include <memory>

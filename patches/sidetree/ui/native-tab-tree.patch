@@ -5048,7 +5048,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
 +    container_override.emplace(container_state.container->id);
 +  }
 +
-+  chrome::NewTab(browser);
++  chrome::NewTab(browser, NewTabTypes::kNewTabButton);
 +  if (!tab_strip_model_) {
 +    return;
 +  }
@@ -5311,7 +5311,7 @@ Index: src/chrome/browser/ui/views/tabs/sidetree/sidetree_tab_strip_view.cc
 +  if (container_id && container_id->is_valid()) {
 +    container_override.emplace(*container_id);
 +  }
-+  chrome::NewTab(browser_view_->browser());
++  chrome::NewTab(browser_view_->browser(), NewTabTypes::kNewTabContextMenu);
 +
 +  const int child_index = tab_strip_model_->active_index();
 +  if (!ContainsIndex(child_index)) {

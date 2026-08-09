@@ -17780,10 +17780,10 @@ Index: src/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
 +  if (background) {
 +    if (IsSideTreeShellActive()) {
 +      background->SetPrimaryColor(kColorSidePanelBackground);
-+      background->SetCornerColor(kColorSidePanelBackground);
++      background->SetCornerColor(CustomCornersBackground::ColorChoiceWithAlpha(kColorSidePanelBackground));
 +    } else {
 +      background->SetPrimaryColor(CustomCornersBackground::FrameTheme());
-+      background->SetCornerColor(CustomCornersBackground::ToolbarTheme());
++      background->SetCornerColor(CustomCornersBackground::ColorChoiceWithAlpha(CustomCornersBackground::ToolbarTheme()));
 +    }
 +  }
    SchedulePaint();

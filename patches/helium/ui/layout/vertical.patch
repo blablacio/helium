@@ -1126,7 +1126,7 @@
 +  // when the vertical-vs-horizontal state actually changes; for in-vertical
 +  // property changes (e.g. right-alignment) a layout pass is sufficient.
 +  const bool vertical_initialized =
-+      vertical_tab_strip_region_view_->GetTabStripView() != nullptr;
++      vertical_tab_strip_region_view_->GetTabStripCollectionController() != nullptr;
 +  const bool should_be_vertical = controller->ShouldDisplayVerticalTabs();
 +  if (vertical_initialized == should_be_vertical) {
 +    // Mode is unchanged; just re-layout so alignment-dependent views update.

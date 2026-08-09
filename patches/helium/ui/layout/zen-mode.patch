@@ -228,7 +228,7 @@
 +void BrowserView::MaybeExpandVerticalTabStripForZenMode() {
 +  const bool vertical_initialized =
 +      vertical_tab_strip_region_view_ &&
-+      vertical_tab_strip_region_view_->GetTabStripView() != nullptr;
++      vertical_tab_strip_region_view_->GetTabStripCollectionController() != nullptr;
 +  if (!zen_mode_enabled_ || IsZenModeSideChromePinned() ||
 +      !ShouldDrawVerticalTabStrip() || !vertical_initialized) {
 +    return;
